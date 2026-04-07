@@ -1,0 +1,156 @@
+:root {
+  --bg: #f0eeeb;
+  --text: #1a1a1a;
+  --text-secondary: #5a5a5a;
+  --link: #1a1a1a;
+  --link-hover: #5a5a5a;
+  --rule: #d0cec9;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 18px;
+}
+
+body {
+  font-family: 'EB Garamond', Georgia, serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 6rem 1.5rem 8rem;
+}
+
+header {
+  margin-bottom: 3rem;
+}
+
+.headshot {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 1.25rem;
+  filter: grayscale(15%);
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.titles {
+  color: var(--text-secondary);
+  margin-top: 0.3rem;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.links {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 0.3rem;
+  margin-bottom: 0;
+}
+
+.bio {
+  margin-bottom: 3rem;
+}
+
+section {
+  margin-bottom: 3rem;
+}
+
+h2 {
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+p {
+  margin-bottom: 0.75rem;
+}
+
+a {
+  color: var(--link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+}
+
+a:hover {
+  color: var(--link-hover);
+}
+
+.papers-list {
+  list-style: none;
+}
+
+.papers-list li {
+  margin-bottom: 0.75rem;
+}
+
+.paper-item {
+  position: relative;
+}
+
+.paper-preview {
+  display: none;
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  z-index: 10;
+  padding-bottom: 0.5rem;
+}
+
+.paper-item:hover .paper-preview {
+  display: block;
+}
+
+.paper-preview img {
+  max-width: 300px;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+}
+
+.sep {
+  color: var(--text-secondary);
+  margin: 0 0.35rem;
+}
+
+footer hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin-bottom: 1rem;
+}
+
+footer .links {
+  margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 16px;
+  }
+
+  main {
+    padding: 4rem 1.25rem 6rem;
+  }
+}
