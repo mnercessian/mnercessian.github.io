@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What Does "90 AUC" Really Mean? — Michael Nercessian</title>
+  <meta name="description" content="An interactive exploration of AUC, prevalence, precision, recall, and F1 — and why a single number never tells the whole story.">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f0eeeb;
+      --text: #1a1a1a;
+      --text-secondary: #5a5a5a;
+      --link: #1a1a1a;
+      --link-hover: #5a5a5a;
+      --rule: #d0cec9;
+      --pos-color: #c0533a;
+      --neg-color: #4a7c91;
+      --pos-light: rgba(192, 83, 58, 0.25);
+      --neg-light: rgba(74, 124, 145, 0.25);
+      --chart-bg: #ffffff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 18px; }
+    body {
+      font-family: 'EB Garamond', Georgia, serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 3rem 2.5rem 5rem;
+    }
+    nav { margin-bottom: 2.5rem; font-size: 0.95rem; }
+    nav a { color: var(--text-secondary); text-decoration: none; }
+    nav a:hover { color: var(--text); }
+    h1 {
+      font-size: 2rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
+      margin-bottom: 0.3rem;
+    }
+    .subtitle {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+      font-style: italic;
+      margin-bottom: 2rem;
+    }
+    article h2 {
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--rule);
+    }
+    article p { margin-bottom: 0.85rem; }
+    a {
+      color: var(--link);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+      transition: color 0.15s ease;
+    }
+    a:hover { color: var(--link-hover); }
+
+    /* Interactive section */
+    .interactive-section {
+      margin: 2rem 0;
+    }
+    .chart-wrapper {
+      margin-bottom: 1.5rem;
+    }
+    .chart-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .chart-box {
+      background: var(--chart-bg);
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 1rem 1rem 0.5rem;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .chart-box h3 {
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+    }
+    .chart-box canvas {
+      display: block;
+      max-width: 100%;
+      cursor: crosshair;
+    }
+    .chart-box .chart-note {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      text-align: center;
+      margin-top: 0.3rem;
+      font-style: italic;
+    }
+    .chart-box.full-width {
+      grid-column: 1 / -1;
+    }
+
+    /* Controls */
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .slider-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.4rem;
+    }
+    .slider-group label span {
+      color: var(--text);
+      font-size: 0.95rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      background: var(--rule);
+      border-radius: 2px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--text);
+      cursor: pointer;
+      border: 2px solid var(--chart-bg);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--text);
+      cursor: pointer;
+      border: 2px solid var(--chart-bg);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    /* Metrics panel */
+    .metrics-panel {
+      background: var(--chart-bg);
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem 1.25rem;
+      margin-bottom: 0;
+      padding-bottom: 1rem;
+    }
+    .metric {
+      text-align: center;
+    }
+    .metric .metric-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+    }
+    .metric .metric-value {
+      font-size: 1.5rem;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.3;
+    }
+    .metric .metric-value.highlight {
+      color: var(--pos-color);
+    }
+    .at-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem 2rem;
+      padding: 0.75rem 0;
+      border-top: 1px solid var(--rule);
+      margin-bottom: 0.25rem;
+    }
+    .at-metric-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .at-metric-row .at-slider { flex: 1; }
+    .at-metric-row .at-slider label {
+      margin-bottom: 0.25rem;
+    }
+    .at-metric-row .metric {
+      min-width: 4.5rem;
+      text-align: right;
+    }
+    .at-metric-row .metric .metric-value {
+      font-size: 1.3rem;
+    }
+    .f1-range {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--rule);
+      margin-bottom: 0.75rem;
+    }
+    .f1-range .f1-text { white-space: nowrap; }
+    .f1-range span { color: var(--text); font-weight: 600; font-size: 1.15rem; }
+    .f1-range .go-btn {
+      display: inline-block;
+      margin-left: 0.4rem;
+      padding: 0.1rem 0.5rem;
+      font-family: inherit;
+      font-size: 0.75rem;
+      letter-spacing: 0.02em;
+      color: var(--text-secondary);
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      cursor: pointer;
+      vertical-align: middle;
+      transition: all 0.15s ease;
+    }
+    .f1-range .go-btn:hover { color: var(--text); border-color: var(--text-secondary); }
+
+    /* Confusion matrix / natural language */
+    .summary-box {
+      background: var(--bg);
+      border-radius: 4px;
+      padding: 1rem 1.25rem;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+    .summary-box .summary-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      margin-bottom: 0.4rem;
+    }
+    .summary-box .cm-grid {
+      display: grid;
+      grid-template-columns: auto 1fr 1fr;
+      gap: 0;
+      margin: 0.75rem 0;
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .cm-grid .cm-cell {
+      padding: 0.35rem 0.75rem;
+      text-align: center;
+      border: 1px solid var(--rule);
+    }
+    .cm-grid .cm-header {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+      padding: 0.3rem 0.5rem;
+      background: transparent;
+      border: none;
+      text-align: center;
+    }
+    .cm-grid .cm-row-header {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+      padding: 0.35rem 0.5rem;
+      background: transparent;
+      border: none;
+      text-align: right;
+    }
+    .cm-cell.tp { background: rgba(192, 83, 58, 0.12); }
+    .cm-cell.fn { background: rgba(192, 83, 58, 0.05); }
+    .cm-cell.fp { background: rgba(74, 124, 145, 0.12); }
+    .cm-cell.tn { background: rgba(74, 124, 145, 0.05); }
+    .summary-punchline {
+      margin-top: 0.5rem;
+      font-style: italic;
+      color: var(--text-secondary);
+    }
+
+    footer {
+      margin-top: 3rem;
+    }
+    footer hr {
+      border: none;
+      border-top: 1px solid var(--rule);
+      margin-bottom: 1rem;
+    }
+    footer .links {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+    .sep {
+      color: var(--text-secondary);
+      margin: 0 0.35rem;
+    }
+
+    @media (max-width: 700px) {
+      html { font-size: 16px; }
+      main { padding: 2.5rem 1.25rem 4rem; }
+      .chart-row { grid-template-columns: 1fr; }
+      .controls { grid-template-columns: 1fr; gap: 1rem; }
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+      .at-metrics { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav><a href="../index.html">← Home</a></nav>
+
+    <article>
+      <h1>What Does &ldquo;90 AUC&rdquo; Really Mean?</h1>
+      <p class="subtitle">An interactive exploration of AUC, prevalence, and the metrics that actually matter at deployment.</p>
+
+      <p>
+        We trained a binary classifier and achieved an AUC of 0.90. Great! But what does that mean for my deployment where I need discretized outputs? It depends entirely on two things we haven&rsquo;t specified yet &mdash; the <strong>decision threshold</strong> we choose and the <strong>prevalence</strong> of the positive class in the population we&rsquo;re deploying to.
+      </p>
+      <p>
+        The goal of this post is to gain intuition around how AUC, prevalence, and decision thresholds interact with metrics of interest at deployment.
+      </p>
+
+      <div class="interactive-section">
+        <div class="chart-row">
+          <div class="chart-box full-width">
+            <h3>Score Distributions</h3>
+            <canvas id="dist-canvas" data-height="200"></canvas>
+            <div class="chart-note">Drag the threshold line or use the slider below</div>
+          </div>
+        </div>
+        <div class="chart-row">
+          <div class="chart-box">
+            <h3>ROC Curve</h3>
+            <canvas id="roc-canvas" data-height="300"></canvas>
+            <div class="chart-note">Click to set operating point</div>
+          </div>
+          <div class="chart-box">
+            <h3>Precision–Recall Curve</h3>
+            <canvas id="prc-canvas" data-height="300"></canvas>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="slider-group">
+            <label>AUC <span id="auc-val">0.90</span></label>
+            <input type="range" id="auc-slider" min="55" max="99" value="90" step="1">
+          </div>
+          <div class="slider-group">
+            <label>Prevalence <span id="prev-val">5.0%</span></label>
+            <input type="range" id="prev-slider" min="1" max="500" value="50" step="1">
+          </div>
+          <div class="slider-group">
+            <label>Operating Point <span id="thresh-val"></span></label>
+            <input type="range" id="thresh-slider" min="0" max="999" value="500" step="1">
+          </div>
+        </div>
+
+        <div class="metrics-panel">
+          <div class="metrics-grid">
+            <div class="metric">
+              <div class="metric-label">Precision</div>
+              <div class="metric-value highlight" id="m-prec">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Recall</div>
+              <div class="metric-value highlight" id="m-sens">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">F1 Score</div>
+              <div class="metric-value highlight" id="m-f1">—</div>
+            </div>
+          </div>
+          <div class="at-metrics">
+            <div class="at-metric-row">
+              <div class="slider-group at-slider">
+                <label>Recall @ Precision &ge; <span id="rap-threshold-val">0.80</span></label>
+                <input type="range" id="rap-slider" min="5" max="100" value="80" step="5">
+              </div>
+              <div class="metric">
+                <div class="metric-value" id="m-rap">—</div>
+              </div>
+            </div>
+            <div class="at-metric-row">
+              <div class="slider-group at-slider">
+                <label>Precision @ Recall &ge; <span id="par-threshold-val">0.80</span></label>
+                <input type="range" id="par-slider" min="5" max="100" value="80" step="5">
+              </div>
+              <div class="metric">
+                <div class="metric-value" id="m-par">—</div>
+              </div>
+            </div>
+          </div>
+          <div class="f1-range" id="f1-range"></div>
+          <div class="summary-box">
+            <div class="summary-title">Per 1,000 Screened</div>
+            <div class="cm-grid">
+              <div class="cm-header"></div>
+              <div class="cm-header">Predicted +</div>
+              <div class="cm-header">Predicted −</div>
+              <div class="cm-row-header">Actual +</div>
+              <div class="cm-cell tp" id="cm-tp">—</div>
+              <div class="cm-cell fn" id="cm-fn">—</div>
+              <div class="cm-row-header">Actual −</div>
+              <div class="cm-cell fp" id="cm-fp">—</div>
+              <div class="cm-cell tn" id="cm-tn">—</div>
+            </div>
+            <div class="summary-punchline" id="summary-text"></div>
+          </div>
+        </div>
+      </div>
+
+      <h2>The Model</h2>
+      <p>
+        We use a <a href="https://en.wikipedia.org/wiki/Binormal_model" target="_blank" rel="noopener noreferrer">binormal model</a>: negative cases have scores drawn from <var>N</var>(0, 1) and positive cases from <var>N</var>(&mu;, 1), where &mu; is chosen to produce the desired AUC. The score distributions above are scaled by prevalence, so their relative areas reflect how many positives and negatives you actually encounter.
+      </p>
+
+    </article>
+  </main>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────
+  const N = 1000;
+  const state = { auc: 0.90, prevalence: 0.05, idx: 500 };
+  let curveData = [];
+
+  // ── Math utilities ─────────────────────────────────────
+  function normalCDF(x) {
+    const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+    const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+    const sign = x < 0 ? -1 : 1;
+    const ax = Math.abs(x) / Math.SQRT2;
+    const t = 1.0 / (1.0 + p * ax);
+    const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
+    return 0.5 * (1.0 + sign * y);
+  }
+
+  function normalPDF(x) {
+    return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+  }
+
+  function normalInvCDF(p) {
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    const a = [-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,
+               1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+    const b = [-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,
+               6.680131188771972e+01,-1.328068155288572e+01];
+    const c = [-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,
+               -2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+    const d = [7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+    const pLow = 0.02425, pHigh = 1 - pLow;
+    let q, r;
+    if (p < pLow) {
+      q = Math.sqrt(-2 * Math.log(p));
+      return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    } else if (p <= pHigh) {
+      q = p - 0.5; r = q * q;
+      return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+    } else {
+      q = Math.sqrt(-2 * Math.log(1 - p));
+      return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    }
+  }
+
+  function aucToMu(auc) {
+    return Math.SQRT2 * normalInvCDF(auc);
+  }
+
+  // ── Curve generation ───────────────────────────────────
+  function generateCurve() {
+    const mu = aucToMu(state.auc);
+    const tMin = -4, tMax = mu + 4;
+    curveData = [];
+    for (let i = 0; i < N; i++) {
+      const t = tMax - (i / (N - 1)) * (tMax - tMin);
+      const fpr = 1 - normalCDF(t);
+      const tpr = 1 - normalCDF(t - mu);
+      curveData.push({ t, fpr, tpr });
+    }
+  }
+
+  // ── Metric computation ─────────────────────────────────
+  function getMetrics(idx, prev) {
+    const pt = curveData[idx];
+    const tpr = pt.tpr, fpr = pt.fpr;
+    const spec = 1 - fpr;
+    const precNum = tpr * prev;
+    const precDen = precNum + fpr * (1 - prev);
+    const prec = precDen > 0 ? precNum / precDen : 1;
+    const f1 = (prec + tpr) > 0 ? 2 * prec * tpr / (prec + tpr) : 0;
+    const npvNum = spec * (1 - prev);
+    const npvDen = npvNum + (1 - tpr) * prev;
+    const npv = npvDen > 0 ? npvNum / npvDen : 1;
+    const acc = tpr * prev + spec * (1 - prev);
+    return { tpr, fpr, spec, prec, f1, npv, acc };
+  }
+
+  function findBestF1(prev) {
+    let bestF1 = 0, bestIdx = 0;
+    for (let i = 0; i < N; i++) {
+      const m = getMetrics(i, prev);
+      if (m.f1 > bestF1) { bestF1 = m.f1; bestIdx = i; }
+    }
+    return { f1: bestF1, idx: bestIdx };
+  }
+
+  // ── Canvas setup ───────────────────────────────────────
+  function initCanvas(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = '0';
+    const w = canvas.parentElement.clientWidth - 32;
+    const h = parseInt(canvas.dataset.height) || 300;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    return { ctx, w, h };
+  }
+
+  const pad = { top: 15, right: 20, bottom: 32, left: 42 };
+
+  function plotX(val, w) { return pad.left + val * (w - pad.left - pad.right); }
+  function plotY(val, h) { return pad.top + (1 - val) * (h - pad.top - pad.bottom); }
+  function invPlotX(px, w) { return (px - pad.left) / (w - pad.left - pad.right); }
+  function invPlotY(py, h) { return 1 - (py - pad.top) / (h - pad.top - pad.bottom); }
+
+  function drawGrid(ctx, w, h, xLabel, yLabel) {
+    const pw = w - pad.left - pad.right;
+    const ph = h - pad.top - pad.bottom;
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    ctx.lineWidth = 1;
+    for (let v = 0.2; v <= 0.81; v += 0.2) {
+      ctx.beginPath();
+      ctx.moveTo(plotX(v, w), pad.top);
+      ctx.lineTo(plotX(v, w), h - pad.bottom);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pad.left, plotY(v, h));
+      ctx.lineTo(w - pad.right, plotY(v, h));
+      ctx.stroke();
+    }
+    // Axes
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top);
+    ctx.lineTo(pad.left, h - pad.bottom);
+    ctx.lineTo(w - pad.right, h - pad.bottom);
+    ctx.stroke();
+    // Labels
+    ctx.fillStyle = '#5a5a5a';
+    ctx.font = '11px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'center';
+    for (let v = 0; v <= 1.01; v += 0.2) {
+      ctx.fillText(v.toFixed(1), plotX(v, w), h - pad.bottom + 15);
+    }
+    ctx.textAlign = 'right';
+    for (let v = 0; v <= 1.01; v += 0.2) {
+      ctx.fillText(v.toFixed(1), pad.left - 6, plotY(v, h) + 4);
+    }
+    ctx.textAlign = 'center';
+    ctx.fillText(xLabel, pad.left + pw / 2, h - 2);
+    ctx.save();
+    ctx.translate(12, pad.top + ph / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(yLabel, 0, 0);
+    ctx.restore();
+  }
+
+  // ── Draw score distributions ───────────────────────────
+  function drawDistributions() {
+    const canvas = document.getElementById('dist-canvas');
+    const { ctx, w, h } = initCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    const mu = aucToMu(state.auc);
+    const prev = state.prevalence;
+    const threshold = curveData[state.idx].t;
+
+    const xMin = -4, xMax = mu + 4;
+    const dPad = { top: 10, right: 20, bottom: 28, left: 42 };
+    const pw = w - dPad.left - dPad.right;
+    const ph = h - dPad.top - dPad.bottom;
+
+    function toX(v) { return dPad.left + (v - xMin) / (xMax - xMin) * pw; }
+    function toY(v) { return dPad.top + ph - v / yMax * ph; }
+    function fromX(px) { return xMin + (px - dPad.left) / pw * (xMax - xMin); }
+
+    // Compute max y for scaling
+    let yMax = 0;
+    for (let x = xMin; x <= xMax; x += 0.01) {
+      const yNeg = normalPDF(x) * (1 - prev);
+      const yPos = normalPDF(x - mu) * prev;
+      yMax = Math.max(yMax, yNeg, yPos);
+    }
+    yMax *= 1.15;
+
+    // Axes
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(dPad.left, dPad.top);
+    ctx.lineTo(dPad.left, h - dPad.bottom);
+    ctx.lineTo(w - dPad.right, h - dPad.bottom);
+    ctx.stroke();
+
+    ctx.fillStyle = '#5a5a5a';
+    ctx.font = '11px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Score', dPad.left + pw / 2, h - 4);
+
+    const step = 0.02;
+
+    // FP fill (negative dist, above threshold)
+    ctx.fillStyle = 'rgba(74, 124, 145, 0.2)';
+    ctx.beginPath();
+    ctx.moveTo(toX(Math.max(threshold, xMin)), toY(0));
+    for (let x = Math.max(threshold, xMin); x <= xMax; x += step) {
+      ctx.lineTo(toX(x), toY(normalPDF(x) * (1 - prev)));
+    }
+    ctx.lineTo(toX(xMax), toY(0));
+    ctx.closePath();
+    ctx.fill();
+
+    // TP fill (positive dist, above threshold)
+    ctx.fillStyle = 'rgba(192, 83, 58, 0.25)';
+    ctx.beginPath();
+    ctx.moveTo(toX(Math.max(threshold, xMin)), toY(0));
+    for (let x = Math.max(threshold, xMin); x <= xMax; x += step) {
+      ctx.lineTo(toX(x), toY(normalPDF(x - mu) * prev));
+    }
+    ctx.lineTo(toX(xMax), toY(0));
+    ctx.closePath();
+    ctx.fill();
+
+    // Negative dist curve
+    ctx.strokeStyle = '#4a7c91';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = xMin; x <= xMax; x += step) {
+      const px = toX(x), py = toY(normalPDF(x) * (1 - prev));
+      x === xMin ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Positive dist curve
+    ctx.strokeStyle = '#c0533a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = xMin; x <= xMax; x += step) {
+      const px = toX(x), py = toY(normalPDF(x - mu) * prev);
+      x === xMin ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Threshold line
+    const tx = toX(threshold);
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(tx, dPad.top);
+    ctx.lineTo(tx, h - dPad.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Legend
+    ctx.font = '12px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'left';
+    const lx = w - dPad.right - 135, ly = dPad.top + 14;
+    ctx.fillStyle = '#c0533a';
+    ctx.fillRect(lx, ly - 6, 14, 3);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillText('Positive class', lx + 20, ly);
+    ctx.fillStyle = '#4a7c91';
+    ctx.fillRect(lx, ly + 12, 14, 3);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillText('Negative class', lx + 20, ly + 18);
+
+    // Region labels
+    ctx.font = '11px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(192, 83, 58, 0.7)';
+    const tpLabelX = toX(Math.min(threshold + (xMax - threshold) * 0.5, mu + 1));
+    if (tpLabelX > tx + 15) ctx.fillText('TP', tpLabelX, h - dPad.bottom - 5);
+    ctx.fillStyle = 'rgba(74, 124, 145, 0.7)';
+    const fpLabelX = toX(Math.min(threshold + (xMax - threshold) * 0.35, 2));
+    if (fpLabelX > tx + 15 && Math.abs(fpLabelX - tpLabelX) > 25) ctx.fillText('FP', fpLabelX, h - dPad.bottom - 5);
+
+    // Store for interaction
+    canvas._distMeta = { fromX, toX, xMin, xMax, dPad };
+  }
+
+  // ── Draw ROC curve ─────────────────────────────────────
+  function drawROC() {
+    const canvas = document.getElementById('roc-canvas');
+    const { ctx, w, h } = initCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    drawGrid(ctx, w, h, 'FPR (1 − Specificity)', 'TPR (Sensitivity)');
+
+    // Diagonal
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(plotX(0, w), plotY(0, h));
+    ctx.lineTo(plotX(1, w), plotY(1, h));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // AUC fill
+    ctx.fillStyle = 'rgba(26, 26, 26, 0.06)';
+    ctx.beginPath();
+    ctx.moveTo(plotX(curveData[0].fpr, w), plotY(curveData[0].tpr, h));
+    for (let i = 1; i < N; i++) {
+      ctx.lineTo(plotX(curveData[i].fpr, w), plotY(curveData[i].tpr, h));
+    }
+    ctx.lineTo(plotX(1, w), plotY(0, h));
+    ctx.lineTo(plotX(0, w), plotY(0, h));
+    ctx.closePath();
+    ctx.fill();
+
+    // Curve
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(plotX(curveData[0].fpr, w), plotY(curveData[0].tpr, h));
+    for (let i = 1; i < N; i++) {
+      ctx.lineTo(plotX(curveData[i].fpr, w), plotY(curveData[i].tpr, h));
+    }
+    ctx.stroke();
+
+    // AUC label
+    ctx.fillStyle = '#5a5a5a';
+    ctx.font = '13px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('AUC = ' + state.auc.toFixed(2), plotX(0.5, w), plotY(0.15, h));
+
+    // Operating point
+    const pt = curveData[state.idx];
+    ctx.fillStyle = '#c0533a';
+    ctx.beginPath();
+    ctx.arc(plotX(pt.fpr, w), plotY(pt.tpr, h), 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+
+    canvas._chartMeta = { w, h };
+  }
+
+  // ── Draw PRC curve ─────────────────────────────────────
+  function drawPRC() {
+    const canvas = document.getElementById('prc-canvas');
+    const { ctx, w, h } = initCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    drawGrid(ctx, w, h, 'Recall (Sensitivity)', 'Precision (PPV)');
+
+    const prev = state.prevalence;
+
+    // Baseline (prevalence line)
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(plotX(0, w), plotY(prev, h));
+    ctx.lineTo(plotX(1, w), plotY(prev, h));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // F1 contour lines
+    const f1Vals = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+    ctx.lineWidth = 1;
+    ctx.font = '10px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'left';
+    for (const f1 of f1Vals) {
+      ctx.strokeStyle = 'rgba(192, 83, 58, 0.18)';
+      ctx.beginPath();
+      let contourStarted = false;
+      for (let r = 0.01; r <= 1.0; r += 0.005) {
+        const p = (f1 * r) / (2 * r - f1);
+        if (p < 0 || p > 1) continue;
+        const px = plotX(r, w), py = plotY(p, h);
+        if (!contourStarted) { ctx.moveTo(px, py); contourStarted = true; }
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      // Label at the right edge of each contour
+      const rAtTop = f1 / (2 - f1); // recall where precision = 1
+      const labelR = Math.min(rAtTop + 0.03, 0.95);
+      const labelP = (f1 * labelR) / (2 * labelR - f1);
+      if (labelP > 0.05 && labelP < 0.98) {
+        ctx.fillStyle = 'rgba(192, 83, 58, 0.4)';
+        ctx.fillText(f1.toFixed(1), plotX(labelR, w) + 2, plotY(labelP, h) - 3);
+      }
+    }
+
+    // PRC curve
+    let started = false;
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    started = false;
+    for (let i = N - 1; i >= 0; i--) {
+      const m = getMetrics(i, prev);
+      if (m.tpr < 0.001 && !started) continue;
+      const px = plotX(m.tpr, w), py = plotY(m.prec, h);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Baseline label
+    ctx.fillStyle = '#5a5a5a';
+    ctx.font = '11px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('baseline = ' + prev.toFixed(2), w - pad.right - 4, plotY(prev, h) - 5);
+
+    // Operating point
+    const m = getMetrics(state.idx, prev);
+    ctx.fillStyle = '#c0533a';
+    ctx.beginPath();
+    ctx.arc(plotX(m.tpr, w), plotY(m.prec, h), 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    canvas._chartMeta = { w, h };
+  }
+
+  // ── Update metrics display ─────────────────────────────
+  function findRecallAtPrecision(precThresh, prev) {
+    let bestRecall = 0;
+    for (let i = 0; i < N; i++) {
+      const m = getMetrics(i, prev);
+      if (m.prec >= precThresh && m.tpr > bestRecall) bestRecall = m.tpr;
+    }
+    return bestRecall;
+  }
+
+  function findPrecisionAtRecall(recallThresh, prev) {
+    let bestPrec = 0;
+    for (let i = 0; i < N; i++) {
+      const m = getMetrics(i, prev);
+      if (m.tpr >= recallThresh && m.prec > bestPrec) bestPrec = m.prec;
+    }
+    return bestPrec;
+  }
+
+  function updateMetrics() {
+    const m = getMetrics(state.idx, state.prevalence);
+    document.getElementById('m-sens').textContent = m.tpr.toFixed(3);
+    document.getElementById('m-prec').textContent = m.prec.toFixed(3);
+    document.getElementById('m-f1').textContent = m.f1.toFixed(3);
+
+    // Recall@Precision and Precision@Recall
+    const rapThresh = parseInt(document.getElementById('rap-slider').value) / 100;
+    const parThresh = parseInt(document.getElementById('par-slider').value) / 100;
+    document.getElementById('rap-threshold-val').textContent = rapThresh.toFixed(2);
+    document.getElementById('par-threshold-val').textContent = parThresh.toFixed(2);
+
+    const rap = findRecallAtPrecision(rapThresh, state.prevalence);
+    const par = findPrecisionAtRecall(parThresh, state.prevalence);
+    document.getElementById('m-rap').textContent = rap > 0 ? rap.toFixed(3) : 'N/A';
+    document.getElementById('m-par').textContent = par > 0 ? par.toFixed(3) : 'N/A';
+
+    const best = findBestF1(state.prevalence);
+    const bestM = getMetrics(best.idx, state.prevalence);
+    const f1El = document.getElementById('f1-range');
+    f1El.innerHTML =
+      '<span class="f1-text">Best achievable F1: <span>' + best.f1.toFixed(3) + '</span> ' +
+      '(at recall = ' + bestM.tpr.toFixed(2) + ', precision = ' + bestM.prec.toFixed(2) + ')</span>' +
+      '<button class="go-btn" id="go-best-f1">Go to threshold</button>';
+    document.getElementById('go-best-f1').addEventListener('click', function() {
+      state.idx = best.idx;
+      document.getElementById('thresh-slider').value = best.idx;
+      updateAll();
+    });
+
+    // Confusion matrix per 1000
+    const nPop = 1000;
+    const nPos = Math.round(nPop * state.prevalence);
+    const nNeg = nPop - nPos;
+    const tp = Math.round(nPos * m.tpr);
+    const fn = nPos - tp;
+    const fp = Math.round(nNeg * m.fpr);
+    const tn = nNeg - fp;
+    document.getElementById('cm-tp').textContent = tp + ' TP';
+    document.getElementById('cm-fn').textContent = fn + ' FN';
+    document.getElementById('cm-fp').textContent = fp + ' FP';
+    document.getElementById('cm-tn').textContent = tn + ' TN';
+
+    const totalPos = tp + fp;
+    let punchline;
+    if (totalPos === 0) {
+      punchline = 'No positive predictions at this threshold.';
+    } else {
+      const pctCorrect = Math.round(tp / totalPos * 100);
+      punchline = 'Of ' + totalPos + ' positive prediction' + (totalPos > 1 ? 's' : '') +
+        ', ' + tp + ' (' + pctCorrect + '%) are true positives. ' +
+        fn + ' of ' + nPos + ' actual positive' + (nPos > 1 ? 's' : '') + ' are missed.';
+    }
+    document.getElementById('summary-text').textContent = punchline;
+  }
+
+  // ── Slider labels ──────────────────────────────────────
+  function updateLabels() {
+    document.getElementById('auc-val').textContent = state.auc.toFixed(2);
+    document.getElementById('prev-val').textContent = (state.prevalence * 100).toFixed(1) + '%';
+    const m = getMetrics(state.idx, state.prevalence);
+    document.getElementById('thresh-val').textContent =
+      'Sens ' + m.tpr.toFixed(2) + ' / Spec ' + m.spec.toFixed(2);
+  }
+
+  // ── Master update ──────────────────────────────────────
+  function updateAll() {
+    drawDistributions();
+    drawROC();
+    drawPRC();
+    updateMetrics();
+    updateLabels();
+  }
+
+  // ── Slider wiring ──────────────────────────────────────
+  const aucSlider = document.getElementById('auc-slider');
+  const prevSlider = document.getElementById('prev-slider');
+  const threshSlider = document.getElementById('thresh-slider');
+
+  aucSlider.addEventListener('input', function() {
+    state.auc = parseInt(this.value) / 100;
+    generateCurve();
+    updateAll();
+  });
+
+  prevSlider.addEventListener('input', function() {
+    state.prevalence = parseInt(this.value) / 1000;
+    updateAll();
+  });
+
+  threshSlider.addEventListener('input', function() {
+    state.idx = parseInt(this.value);
+    updateAll();
+  });
+
+  document.getElementById('rap-slider').addEventListener('input', function() {
+    updateMetrics();
+  });
+
+  document.getElementById('par-slider').addEventListener('input', function() {
+    updateMetrics();
+  });
+
+  // ── Canvas interactions (click to set operating point) ─
+  function setupROCInteraction() {
+    const canvas = document.getElementById('roc-canvas');
+    let dragging = false;
+
+    function setFromMouse(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const meta = canvas._chartMeta;
+      if (!meta) return;
+      const fx = invPlotX(mx, meta.w);
+      const fy = invPlotY(my, meta.h);
+      let bestDist = Infinity, bestIdx = 0;
+      for (let i = 0; i < N; i++) {
+        const dx = curveData[i].fpr - fx;
+        const dy = curveData[i].tpr - fy;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      state.idx = bestIdx;
+      threshSlider.value = bestIdx;
+      updateAll();
+    }
+
+    canvas.addEventListener('mousedown', function(e) { dragging = true; setFromMouse(e); });
+    canvas.addEventListener('mousemove', function(e) { if (dragging) setFromMouse(e); });
+    window.addEventListener('mouseup', function() { dragging = false; });
+
+  }
+
+  function setupPRCInteraction() {
+    const canvas = document.getElementById('prc-canvas');
+    let dragging = false;
+
+    function setFromMouse(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const meta = canvas._chartMeta;
+      if (!meta) return;
+      const targetRecall = invPlotX(mx, meta.w);
+      let bestDist = Infinity, bestIdx = 0;
+      for (let i = 0; i < N; i++) {
+        const d = Math.abs(curveData[i].tpr - targetRecall);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      state.idx = bestIdx;
+      threshSlider.value = bestIdx;
+      updateAll();
+    }
+
+    canvas.addEventListener('mousedown', function(e) { dragging = true; setFromMouse(e); });
+    canvas.addEventListener('mousemove', function(e) { if (dragging) setFromMouse(e); });
+    window.addEventListener('mouseup', function() { dragging = false; });
+
+  }
+
+  function setupDistInteraction() {
+    const canvas = document.getElementById('dist-canvas');
+    let dragging = false;
+
+    function setFromMouse(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const meta = canvas._distMeta;
+      if (!meta) return;
+      const scoreVal = meta.fromX(mx);
+      let bestDist = Infinity, bestIdx = 0;
+      for (let i = 0; i < N; i++) {
+        const d = Math.abs(curveData[i].t - scoreVal);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      state.idx = bestIdx;
+      threshSlider.value = bestIdx;
+      updateAll();
+    }
+
+    canvas.addEventListener('mousedown', function(e) { dragging = true; setFromMouse(e); });
+    canvas.addEventListener('mousemove', function(e) { if (dragging) setFromMouse(e); });
+    window.addEventListener('mouseup', function() { dragging = false; });
+
+  }
+
+  // ── Resize handling ────────────────────────────────────
+  let resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(updateAll, 100);
+  });
+
+  // ── Initialize ─────────────────────────────────────────
+  generateCurve();
+  updateAll();
+  setupROCInteraction();
+  setupPRCInteraction();
+  setupDistInteraction();
+
+})();
+</script>
+</body>
+</html>
