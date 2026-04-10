@@ -102,6 +102,37 @@
       color: var(--text-secondary);
       margin-bottom: 0.5rem;
     }
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+    .chart-header h3 { margin-bottom: 0; }
+    .toggle-group {
+      display: inline-flex;
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .toggle-btn {
+      font-family: inherit;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.2rem 0.6rem;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .toggle-btn + .toggle-btn { border-left: 1px solid var(--rule); }
+    .toggle-btn.active {
+      background: var(--text);
+      color: var(--chart-bg);
+    }
+    .toggle-btn:hover:not(.active) { background: rgba(0,0,0,0.04); }
     .chart-box canvas {
       display: block;
       max-width: 100%;
@@ -362,7 +393,13 @@
       <div class="interactive-section">
         <div class="chart-row">
           <div class="chart-box full-width">
-            <h3>Score Distributions</h3>
+            <div class="chart-header">
+              <h3>Score Distributions</h3>
+              <div class="toggle-group" id="dist-toggle">
+                <button class="toggle-btn active" data-value="canonical">Canonical example</button>
+                <button class="toggle-btn" data-value="sample">Sample many examples</button>
+              </div>
+            </div>
             <canvas id="dist-canvas" data-height="200"></canvas>
             <div class="chart-note">Drag the threshold line or use the slider below</div>
           </div>
@@ -448,10 +485,18 @@
         </div>
       </div>
 
-      <h2>The Model</h2>
+      <div style="font-size: 0.82rem; color: #6a6a6a;">
+      <h2 style="font-size: 1.1rem;">The Model</h2>
       <p>
-        We use a <a href="https://en.wikipedia.org/wiki/Binormal_model" target="_blank" rel="noopener noreferrer">binormal model</a>: negative cases have scores drawn from <var>N</var>(0, 1) and positive cases from <var>N</var>(&mu;, 1), where &mu; is chosen to produce the desired AUC. The score distributions above are scaled by prevalence, so their relative areas reflect how many positives and negatives you actually encounter.
+        In <strong>Canonical example</strong> mode, we use a binormal model: negative cases have scores drawn from <var>N</var>(0,&thinsp;1) and positive cases from <var>N</var>(&mu;,&thinsp;1), where &mu; is chosen to produce the desired AUC.
       </p>
+      <p>
+        In <strong>Sample many examples</strong> mode, we show that the same AUC can arise from very different score distributions. Each alternate curve models the positive class as a two-component Gaussian mixture, <var>w</var>&thinsp;&middot;&thinsp;<var>N</var>(&mu;<sub>1</sub>,&thinsp;&sigma;<sub>1</sub>&sup2;) + (1&minus;<var>w</var>)&thinsp;&middot;&thinsp;<var>N</var>(&mu;<sub>2</sub>,&thinsp;&sigma;<sub>2</sub>&sup2;), with parameters chosen so the AUC matches the target. This produces bimodal and skewed distributions &mdash; a &ldquo;hard&rdquo; subpopulation that overlaps with negatives and an &ldquo;easy&rdquo; one that separates cleanly. Additional curves use a heteroscedastic binormal model (varying the positive-class variance) for further variety. Click any alternate curve to lock it as the active model and see how its metrics differ from the canonical one.
+      </p>
+      <p>
+        The score distributions are scaled by prevalence, so their relative areas reflect how many positives and negatives you actually encounter.
+      </p>
+      </div>
 
     </article>
   </main>
@@ -462,8 +507,10 @@
 
   // ── State ──────────────────────────────────────────────
   const N = 1000;
-  const state = { auc: 0.90, prevalence: 0.05, idx: 500 };
+  const N_ALT = 50;
+  const state = { auc: 0.90, prevalence: 0.05, idx: 500, showMultiple: false, hoveredAlt: -1, selectedAlt: -1 };
   let curveData = [];
+  let altCurves = [];
 
   // ── Math utilities ─────────────────────────────────────
   function normalCDF(x) {
@@ -508,6 +555,23 @@
     return Math.SQRT2 * normalInvCDF(auc);
   }
 
+  function mixturePDF(x, w, mu1, s1, mu2, s2) {
+    return w * normalPDF((x - mu1) / s1) / s1 + (1 - w) * normalPDF((x - mu2) / s2) / s2;
+  }
+
+  function mixtureCDF(x, w, mu1, s1, mu2, s2) {
+    return w * normalCDF((x - mu1) / s1) + (1 - w) * normalCDF((x - mu2) / s2);
+  }
+
+  function computeAUC(points) {
+    let auc = 0;
+    for (let i = 1; i < points.length; i++) {
+      const dx = points[i].fpr - points[i - 1].fpr;
+      auc += 0.5 * (points[i].tpr + points[i - 1].tpr) * dx;
+    }
+    return Math.abs(auc);
+  }
+
   // ── Curve generation ───────────────────────────────────
   function generateCurve() {
     const mu = aucToMu(state.auc);
@@ -519,11 +583,87 @@
       const tpr = 1 - normalCDF(t - mu);
       curveData.push({ t, fpr, tpr });
     }
+    generateAltCurves();
+  }
+
+  function generateAltCurves() {
+    altCurves = [];
+    var targetAUC = state.auc;
+    var canonMu = aucToMu(targetAUC);
+    var tolerance = 0.005;
+
+    function makePoints(w, mu1, s1, mu2, s2) {
+      var upper = Math.max(mu1 + 4 * s1, mu2 + 4 * s2);
+      var tMin = -4, tMax = Math.max(upper, 4);
+      var pts = [];
+      for (var i = 0; i < N; i++) {
+        var t = tMax - (i / (N - 1)) * (tMax - tMin);
+        var fpr = 1 - normalCDF(t);
+        var tpr = 1 - mixtureCDF(t, w, mu1, s1, mu2, s2);
+        pts.push({ t: t, fpr: fpr, tpr: tpr });
+      }
+      return pts;
+    }
+
+    var pool = [];
+
+    // Mixture candidates (mu1 scales with canonical mu for feasibility)
+    var wVals = [0.08, 0.15, 0.25, 0.35, 0.45, 0.55];
+    var s1Vals = [0.4, 0.7, 1.0, 1.5, 2.0];
+    var mu1Fracs = [0.1, 0.3, 0.5, 0.7];
+    var s2Val = 1.0;
+
+    for (var wi = 0; wi < wVals.length; wi++) {
+      for (var si = 0; si < s1Vals.length; si++) {
+        for (var mi = 0; mi < mu1Fracs.length; mi++) {
+          var w = wVals[wi], s1 = s1Vals[si];
+          var mu1 = mu1Fracs[mi] * canonMu;
+          var auc1 = normalCDF(mu1 / Math.sqrt(1 + s1 * s1));
+          var maxAUC = w * auc1 + (1 - w);
+          if (maxAUC < targetAUC + 0.01) continue;
+
+          var lo = -2, hi = 20;
+          for (var iter = 0; iter < 40; iter++) {
+            var mid = (lo + hi) / 2;
+            var pts = makePoints(w, mu1, s1, mid, s2Val);
+            if (computeAUC(pts) < targetAUC) lo = mid;
+            else hi = mid;
+          }
+          var mu2 = (lo + hi) / 2;
+          var points = makePoints(w, mu1, s1, mu2, s2Val);
+          if (Math.abs(computeAUC(points) - targetAUC) > tolerance) continue;
+          pool.push({ w: w, mu1: mu1, s1: s1, mu2: mu2, s2: s2Val, points: points });
+        }
+      }
+    }
+
+    // Heteroscedastic binormal candidates (always feasible)
+    var sigmaMin = 0.4, sigmaMax = 2.5, nBinormal = 25;
+    for (var k = 0; k < nBinormal; k++) {
+      var sigma = sigmaMin + (k / (nBinormal - 1)) * (sigmaMax - sigmaMin);
+      var mu = Math.sqrt(1 + sigma * sigma) * normalInvCDF(targetAUC);
+      var tMin = -4, tMax = mu + 4 * sigma;
+      var pts = [];
+      for (var i = 0; i < N; i++) {
+        var t = tMax - (i / (N - 1)) * (tMax - tMin);
+        pts.push({ t: t, fpr: 1 - normalCDF(t), tpr: 1 - normalCDF((t - mu) / sigma) });
+      }
+      pool.push({ w: 1.0, mu1: mu, s1: sigma, mu2: mu, s2: sigma, points: pts });
+    }
+
+    // Evenly subsample N_ALT from pool
+    if (pool.length <= N_ALT) {
+      altCurves = pool;
+    } else {
+      for (var k = 0; k < N_ALT; k++) {
+        altCurves.push(pool[Math.round(k * (pool.length - 1) / (N_ALT - 1))]);
+      }
+    }
   }
 
   // ── Metric computation ─────────────────────────────────
-  function getMetrics(idx, prev) {
-    const pt = curveData[idx];
+  function getMetrics(idx, prev, points) {
+    const pt = (points || curveData)[idx];
     const tpr = pt.tpr, fpr = pt.fpr;
     const spec = 1 - fpr;
     const precNum = tpr * prev;
@@ -537,13 +677,17 @@
     return { tpr, fpr, spec, prec, f1, npv, acc };
   }
 
-  function findBestF1(prev) {
+  function findBestF1(prev, points) {
     let bestF1 = 0, bestIdx = 0;
     for (let i = 0; i < N; i++) {
-      const m = getMetrics(i, prev);
+      const m = getMetrics(i, prev, points);
       if (m.f1 > bestF1) { bestF1 = m.f1; bestIdx = i; }
     }
     return { f1: bestF1, idx: bestIdx };
+  }
+
+  function getActivePoints() {
+    return state.selectedAlt >= 0 ? altCurves[state.selectedAlt].points : curveData;
   }
 
   // ── Canvas setup ───────────────────────────────────────
@@ -621,7 +765,13 @@
     const prev = state.prevalence;
     const threshold = curveData[state.idx].t;
 
-    const xMin = -4, xMax = mu + 4;
+    let xMin = -4, xMax = mu + 4;
+    if (state.showMultiple) {
+      for (let k = 0; k < altCurves.length; k++) {
+        const ac = altCurves[k];
+        xMax = Math.max(xMax, ac.mu1 + 4 * ac.s1, ac.mu2 + 4 * ac.s2);
+      }
+    }
     const dPad = { top: 10, right: 20, bottom: 28, left: 42 };
     const pw = w - dPad.left - dPad.right;
     const ph = h - dPad.top - dPad.bottom;
@@ -636,6 +786,14 @@
       const yNeg = normalPDF(x) * (1 - prev);
       const yPos = normalPDF(x - mu) * prev;
       yMax = Math.max(yMax, yNeg, yPos);
+    }
+    if (state.showMultiple) {
+      for (let k = 0; k < altCurves.length; k++) {
+        const ac = altCurves[k];
+        for (let x = xMin; x <= xMax; x += 0.1) {
+          yMax = Math.max(yMax, mixturePDF(x, ac.w, ac.mu1, ac.s1, ac.mu2, ac.s2) * prev);
+        }
+      }
     }
     yMax *= 1.15;
 
@@ -654,6 +812,23 @@
     ctx.fillText('Score', dPad.left + pw / 2, h - 4);
 
     const step = 0.02;
+
+    // Alternate positive distributions (10% opacity, highlighted/selected drawn later)
+    if (state.showMultiple) {
+      for (let k = 0; k < altCurves.length; k++) {
+        if (k === state.hoveredAlt || k === state.selectedAlt) continue;
+        const ac = altCurves[k];
+        ctx.strokeStyle = 'rgba(192, 83, 58, 0.10)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let x = xMin; x <= xMax; x += step) {
+          const val = mixturePDF(x, ac.w, ac.mu1, ac.s1, ac.mu2, ac.s2) * prev;
+          const px = toX(x), py = toY(val);
+          x === xMin ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+    }
 
     // FP fill (negative dist, above threshold)
     ctx.fillStyle = 'rgba(74, 124, 145, 0.2)';
@@ -687,9 +862,9 @@
     }
     ctx.stroke();
 
-    // Positive dist curve
-    ctx.strokeStyle = '#c0533a';
-    ctx.lineWidth = 2;
+    // Positive dist curve (dimmed when an alt is selected)
+    ctx.strokeStyle = (state.showMultiple && state.selectedAlt >= 0) ? 'rgba(192, 83, 58, 0.10)' : '#c0533a';
+    ctx.lineWidth = (state.showMultiple && state.selectedAlt >= 0) ? 1.5 : 2;
     ctx.beginPath();
     for (let x = xMin; x <= xMax; x += step) {
       const px = toX(x), py = toY(normalPDF(x - mu) * prev);
@@ -731,6 +906,34 @@
     const fpLabelX = toX(Math.min(threshold + (xMax - threshold) * 0.35, 2));
     if (fpLabelX > tx + 15 && Math.abs(fpLabelX - tpLabelX) > 25) ctx.fillText('FP', fpLabelX, h - dPad.bottom - 5);
 
+    // Selected alternate distribution (full opacity, replaces canonical)
+    if (state.showMultiple && state.selectedAlt >= 0) {
+      const ac = altCurves[state.selectedAlt];
+      ctx.strokeStyle = '#c0533a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = xMin; x <= xMax; x += step) {
+        const val = mixturePDF(x, ac.w, ac.mu1, ac.s1, ac.mu2, ac.s2) * prev;
+        const px = toX(x), py = toY(val);
+        x === xMin ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+
+    // Highlighted alternate distribution
+    if (state.showMultiple && state.hoveredAlt >= 0 && state.hoveredAlt !== state.selectedAlt) {
+      const ac = altCurves[state.hoveredAlt];
+      ctx.strokeStyle = 'rgba(192, 83, 58, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = xMin; x <= xMax; x += step) {
+        const val = mixturePDF(x, ac.w, ac.mu1, ac.s1, ac.mu2, ac.s2) * prev;
+        const px = toX(x), py = toY(val);
+        x === xMin ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+
     // Store for interaction
     canvas._distMeta = { fromX, toX, xMin, xMax, dPad };
   }
@@ -753,6 +956,22 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // Alternate ROC curves (10% opacity, highlighted/selected drawn later)
+    if (state.showMultiple) {
+      ctx.strokeStyle = 'rgba(26, 26, 26, 0.10)';
+      ctx.lineWidth = 1.5;
+      for (let k = 0; k < altCurves.length; k++) {
+        if (k === state.hoveredAlt || k === state.selectedAlt) continue;
+        const pts = altCurves[k].points;
+        ctx.beginPath();
+        ctx.moveTo(plotX(pts[0].fpr, w), plotY(pts[0].tpr, h));
+        for (let i = 1; i < N; i++) {
+          ctx.lineTo(plotX(pts[i].fpr, w), plotY(pts[i].tpr, h));
+        }
+        ctx.stroke();
+      }
+    }
+
     // AUC fill
     ctx.fillStyle = 'rgba(26, 26, 26, 0.06)';
     ctx.beginPath();
@@ -765,9 +984,9 @@
     ctx.closePath();
     ctx.fill();
 
-    // Curve
-    ctx.strokeStyle = '#1a1a1a';
-    ctx.lineWidth = 2;
+    // Curve (dimmed when an alt is selected)
+    ctx.strokeStyle = (state.showMultiple && state.selectedAlt >= 0) ? 'rgba(26, 26, 26, 0.10)' : '#1a1a1a';
+    ctx.lineWidth = (state.showMultiple && state.selectedAlt >= 0) ? 1.5 : 2;
     ctx.beginPath();
     ctx.moveTo(plotX(curveData[0].fpr, w), plotY(curveData[0].tpr, h));
     for (let i = 1; i < N; i++) {
@@ -781,8 +1000,34 @@
     ctx.textAlign = 'left';
     ctx.fillText('AUC = ' + state.auc.toFixed(2), plotX(0.5, w), plotY(0.15, h));
 
+    // Highlighted alternate ROC curve
+    if (state.showMultiple && state.hoveredAlt >= 0 && state.hoveredAlt !== state.selectedAlt) {
+      const pts = altCurves[state.hoveredAlt].points;
+      ctx.strokeStyle = 'rgba(26, 26, 26, 0.55)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(plotX(pts[0].fpr, w), plotY(pts[0].tpr, h));
+      for (let i = 1; i < N; i++) {
+        ctx.lineTo(plotX(pts[i].fpr, w), plotY(pts[i].tpr, h));
+      }
+      ctx.stroke();
+    }
+
+    // Selected alt curve (full opacity, replaces canonical)
+    if (state.showMultiple && state.selectedAlt >= 0) {
+      const pts = altCurves[state.selectedAlt].points;
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(plotX(pts[0].fpr, w), plotY(pts[0].tpr, h));
+      for (let i = 1; i < N; i++) {
+        ctx.lineTo(plotX(pts[i].fpr, w), plotY(pts[i].tpr, h));
+      }
+      ctx.stroke();
+    }
+
     // Operating point
-    const pt = curveData[state.idx];
+    const pt = getActivePoints()[state.idx];
     ctx.fillStyle = '#c0533a';
     ctx.beginPath();
     ctx.arc(plotX(pt.fpr, w), plotY(pt.tpr, h), 6, 0, Math.PI * 2);
@@ -790,7 +1035,6 @@
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.stroke();
-
 
     canvas._chartMeta = { w, h };
   }
@@ -842,10 +1086,33 @@
       }
     }
 
-    // PRC curve
+    // Alternate PRC curves (10% opacity, highlighted/selected drawn later)
+    if (state.showMultiple) {
+      ctx.strokeStyle = 'rgba(26, 26, 26, 0.10)';
+      ctx.lineWidth = 1.5;
+      for (let k = 0; k < altCurves.length; k++) {
+        if (k === state.hoveredAlt || k === state.selectedAlt) continue;
+        const pts = altCurves[k].points;
+        ctx.beginPath();
+        let altStarted = false;
+        for (let i = N - 1; i >= 0; i--) {
+          const tpr = pts[i].tpr, fpr = pts[i].fpr;
+          if (tpr < 0.001 && !altStarted) continue;
+          const precNum = tpr * prev;
+          const precDen = precNum + fpr * (1 - prev);
+          const prec = precDen > 0 ? precNum / precDen : 1;
+          const px = plotX(tpr, w), py = plotY(prec, h);
+          if (!altStarted) { ctx.moveTo(px, py); altStarted = true; }
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // PRC curve (dimmed when an alt is selected)
     let started = false;
-    ctx.strokeStyle = '#1a1a1a';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = (state.showMultiple && state.selectedAlt >= 0) ? 'rgba(26, 26, 26, 0.10)' : '#1a1a1a';
+    ctx.lineWidth = (state.showMultiple && state.selectedAlt >= 0) ? 1.5 : 2;
     ctx.beginPath();
     started = false;
     for (let i = N - 1; i >= 0; i--) {
@@ -857,14 +1124,54 @@
     }
     ctx.stroke();
 
+    // Highlighted alternate PRC curve
+    if (state.showMultiple && state.hoveredAlt >= 0 && state.hoveredAlt !== state.selectedAlt) {
+      const pts = altCurves[state.hoveredAlt].points;
+      ctx.strokeStyle = 'rgba(26, 26, 26, 0.55)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      let hStarted = false;
+      for (let i = N - 1; i >= 0; i--) {
+        const tpr = pts[i].tpr, fpr = pts[i].fpr;
+        if (tpr < 0.001 && !hStarted) continue;
+        const precNum = tpr * prev;
+        const precDen = precNum + fpr * (1 - prev);
+        const prec = precDen > 0 ? precNum / precDen : 1;
+        const px = plotX(tpr, w), py = plotY(prec, h);
+        if (!hStarted) { ctx.moveTo(px, py); hStarted = true; }
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+
     // Baseline label
     ctx.fillStyle = '#5a5a5a';
     ctx.font = '11px "EB Garamond", Georgia, serif';
     ctx.textAlign = 'right';
     ctx.fillText('baseline = ' + prev.toFixed(2), w - pad.right - 4, plotY(prev, h) - 5);
 
+    // Selected alt curve (full opacity, replaces canonical)
+    if (state.showMultiple && state.selectedAlt >= 0) {
+      const pts = altCurves[state.selectedAlt].points;
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      let sStarted = false;
+      for (let i = N - 1; i >= 0; i--) {
+        const tpr = pts[i].tpr, fpr = pts[i].fpr;
+        if (tpr < 0.001 && !sStarted) continue;
+        const precNum = tpr * prev;
+        const precDen = precNum + fpr * (1 - prev);
+        const prec = precDen > 0 ? precNum / precDen : 1;
+        const px = plotX(tpr, w), py = plotY(prec, h);
+        if (!sStarted) { ctx.moveTo(px, py); sStarted = true; }
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+
     // Operating point
-    const m = getMetrics(state.idx, prev);
+    const m = getMetrics(state.idx, prev, getActivePoints());
     ctx.fillStyle = '#c0533a';
     ctx.beginPath();
     ctx.arc(plotX(m.tpr, w), plotY(m.prec, h), 6, 0, Math.PI * 2);
@@ -873,30 +1180,44 @@
     ctx.lineWidth = 2;
     ctx.stroke();
 
+    // F1 legend
+    ctx.font = '11px "EB Garamond", Georgia, serif';
+    ctx.textAlign = 'right';
+    const legX = w - pad.right - 8, legY = pad.top + 12;
+    ctx.strokeStyle = 'rgba(192, 83, 58, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(legX - 16, legY);
+    ctx.lineTo(legX, legY);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(192, 83, 58, 0.6)';
+    ctx.fillText('F1', legX - 20, legY + 4);
+
     canvas._chartMeta = { w, h };
   }
 
   // ── Update metrics display ─────────────────────────────
-  function findRecallAtPrecision(precThresh, prev) {
+  function findRecallAtPrecision(precThresh, prev, points) {
     let bestRecall = 0;
     for (let i = 0; i < N; i++) {
-      const m = getMetrics(i, prev);
+      const m = getMetrics(i, prev, points);
       if (m.prec >= precThresh && m.tpr > bestRecall) bestRecall = m.tpr;
     }
     return bestRecall;
   }
 
-  function findPrecisionAtRecall(recallThresh, prev) {
+  function findPrecisionAtRecall(recallThresh, prev, points) {
     let bestPrec = 0;
     for (let i = 0; i < N; i++) {
-      const m = getMetrics(i, prev);
+      const m = getMetrics(i, prev, points);
       if (m.tpr >= recallThresh && m.prec > bestPrec) bestPrec = m.prec;
     }
     return bestPrec;
   }
 
   function updateMetrics() {
-    const m = getMetrics(state.idx, state.prevalence);
+    const active = getActivePoints();
+    const m = getMetrics(state.idx, state.prevalence, active);
     document.getElementById('m-sens').textContent = m.tpr.toFixed(3);
     document.getElementById('m-prec').textContent = m.prec.toFixed(3);
     document.getElementById('m-f1').textContent = m.f1.toFixed(3);
@@ -907,13 +1228,13 @@
     document.getElementById('rap-threshold-val').textContent = rapThresh.toFixed(2);
     document.getElementById('par-threshold-val').textContent = parThresh.toFixed(2);
 
-    const rap = findRecallAtPrecision(rapThresh, state.prevalence);
-    const par = findPrecisionAtRecall(parThresh, state.prevalence);
+    const rap = findRecallAtPrecision(rapThresh, state.prevalence, active);
+    const par = findPrecisionAtRecall(parThresh, state.prevalence, active);
     document.getElementById('m-rap').textContent = rap > 0 ? rap.toFixed(3) : 'N/A';
     document.getElementById('m-par').textContent = par > 0 ? par.toFixed(3) : 'N/A';
 
-    const best = findBestF1(state.prevalence);
-    const bestM = getMetrics(best.idx, state.prevalence);
+    const best = findBestF1(state.prevalence, active);
+    const bestM = getMetrics(best.idx, state.prevalence, active);
     const f1El = document.getElementById('f1-range');
     f1El.innerHTML =
       '<span class="f1-text">Best achievable F1: <span>' + best.f1.toFixed(3) + '</span> ' +
@@ -955,7 +1276,7 @@
   function updateLabels() {
     document.getElementById('auc-val').textContent = state.auc.toFixed(2);
     document.getElementById('prev-val').textContent = (state.prevalence * 100).toFixed(1) + '%';
-    const m = getMetrics(state.idx, state.prevalence);
+    const m = getMetrics(state.idx, state.prevalence, getActivePoints());
     document.getElementById('thresh-val').textContent =
       'Sens ' + m.tpr.toFixed(2) + ' / Spec ' + m.spec.toFixed(2);
   }
@@ -969,6 +1290,17 @@
     updateLabels();
   }
 
+  // ── Toggle wiring ──────────────────────────────────────
+  document.getElementById('dist-toggle').addEventListener('click', function(e) {
+    const btn = e.target.closest('.toggle-btn');
+    if (!btn) return;
+    this.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    state.showMultiple = btn.dataset.value === 'sample';
+    if (!state.showMultiple) state.selectedAlt = -1;
+    updateAll();
+  });
+
   // ── Slider wiring ──────────────────────────────────────
   const aucSlider = document.getElementById('auc-slider');
   const prevSlider = document.getElementById('prev-slider');
@@ -976,6 +1308,7 @@
 
   aucSlider.addEventListener('input', function() {
     state.auc = parseInt(this.value) / 100;
+    state.selectedAlt = -1;
     generateCurve();
     updateAll();
   });
@@ -998,12 +1331,94 @@
     updateMetrics();
   });
 
-  // ── Canvas interactions (click to set operating point) ─
+  // ── Nearest-alt finders ────────────────────────────────
+  function findNearestAltOnROC(mx, my) {
+    const meta = document.getElementById('roc-canvas')._chartMeta;
+    if (!meta) return -1;
+    const fx = invPlotX(mx, meta.w);
+    const fy = invPlotY(my, meta.h);
+    let canonDist = Infinity;
+    for (let i = 0; i < N; i += 5) {
+      const dx = curveData[i].fpr - fx, dy = curveData[i].tpr - fy;
+      canonDist = Math.min(canonDist, dx * dx + dy * dy);
+    }
+    let bestDist = Infinity, bestK = -1;
+    for (let k = 0; k < altCurves.length; k++) {
+      const pts = altCurves[k].points;
+      for (let i = 0; i < N; i += 5) {
+        const dx = pts[i].fpr - fx, dy = pts[i].tpr - fy;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; bestK = k; }
+      }
+    }
+    if (bestDist > 0.005 || canonDist <= bestDist) return -1;
+    return bestK;
+  }
+
+  function findNearestAltOnPRC(mx, my) {
+    const meta = document.getElementById('prc-canvas')._chartMeta;
+    if (!meta) return -1;
+    const fx = invPlotX(mx, meta.w);
+    const fy = invPlotY(my, meta.h);
+    const prev = state.prevalence;
+    let canonDist = Infinity;
+    for (let i = 0; i < N; i += 5) {
+      const m = getMetrics(i, prev);
+      const dx = m.tpr - fx, dy = m.prec - fy;
+      canonDist = Math.min(canonDist, dx * dx + dy * dy);
+    }
+    let bestDist = Infinity, bestK = -1;
+    for (let k = 0; k < altCurves.length; k++) {
+      const pts = altCurves[k].points;
+      for (let i = 0; i < N; i += 5) {
+        const tpr = pts[i].tpr, fpr = pts[i].fpr;
+        const precNum = tpr * prev;
+        const precDen = precNum + fpr * (1 - prev);
+        const prec = precDen > 0 ? precNum / precDen : 1;
+        const dx = tpr - fx, dy = prec - fy;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; bestK = k; }
+      }
+    }
+    if (bestDist > 0.005 || canonDist <= bestDist) return -1;
+    return bestK;
+  }
+
+  function findNearestAltOnDist(mx) {
+    const meta = document.getElementById('dist-canvas')._distMeta;
+    if (!meta) return -1;
+    const scoreVal = meta.fromX(mx);
+    const prev = state.prevalence;
+    let bestVal = 0, bestK = -1;
+    for (let k = 0; k < altCurves.length; k++) {
+      const ac = altCurves[k];
+      const val = mixturePDF(scoreVal, ac.w, ac.mu1, ac.s1, ac.mu2, ac.s2) * prev;
+      if (val > bestVal) { bestVal = val; bestK = k; }
+    }
+    return bestVal > 0.001 ? bestK : -1;
+  }
+
+  function onHover(newK) {
+    if (newK === state.hoveredAlt) return;
+    state.hoveredAlt = newK;
+    updateAll();
+  }
+
+  // ── Canvas interactions ───────────────────────────────
   function setupROCInteraction() {
     const canvas = document.getElementById('roc-canvas');
     let dragging = false;
 
-    function setFromMouse(e) {
+    function isNearOperatingPoint(mx, my) {
+      const meta = canvas._chartMeta;
+      if (!meta) return false;
+      const pts = getActivePoints();
+      const pt = pts[state.idx];
+      const dx = mx - plotX(pt.fpr, meta.w), dy = my - plotY(pt.tpr, meta.h);
+      return Math.sqrt(dx * dx + dy * dy) <= 10;
+    }
+
+    function setThreshFromMouse(e) {
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
@@ -1011,10 +1426,11 @@
       if (!meta) return;
       const fx = invPlotX(mx, meta.w);
       const fy = invPlotY(my, meta.h);
+      const pts = getActivePoints();
       let bestDist = Infinity, bestIdx = 0;
       for (let i = 0; i < N; i++) {
-        const dx = curveData[i].fpr - fx;
-        const dy = curveData[i].tpr - fy;
+        const dx = pts[i].fpr - fx;
+        const dy = pts[i].tpr - fy;
         const d = dx * dx + dy * dy;
         if (d < bestDist) { bestDist = d; bestIdx = i; }
       }
@@ -1023,25 +1439,69 @@
       updateAll();
     }
 
-    canvas.addEventListener('mousedown', function(e) { dragging = true; setFromMouse(e); });
-    canvas.addEventListener('mousemove', function(e) { if (dragging) setFromMouse(e); });
-    window.addEventListener('mouseup', function() { dragging = false; });
+    canvas.addEventListener('mousedown', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      if (state.showMultiple) {
+        if (isNearOperatingPoint(mx, my)) {
+          dragging = true;
+          canvas.style.cursor = 'grabbing';
+        } else {
+          state.selectedAlt = findNearestAltOnROC(mx, my);
+          updateAll();
+        }
+      } else {
+        dragging = true;
+        setThreshFromMouse(e);
+      }
+    });
 
+    canvas.addEventListener('mousemove', function(e) {
+      if (dragging) {
+        setThreshFromMouse(e);
+        return;
+      }
+      if (!state.showMultiple) { canvas.style.cursor = ''; return; }
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      if (isNearOperatingPoint(mx, my)) {
+        canvas.style.cursor = 'grab';
+        onHover(-1);
+      } else {
+        canvas.style.cursor = 'crosshair';
+        onHover(findNearestAltOnROC(mx, my));
+      }
+    });
+
+    canvas.addEventListener('mouseleave', function() { canvas.style.cursor = ''; onHover(-1); });
+    window.addEventListener('mouseup', function() {
+      if (dragging) { dragging = false; canvas.style.cursor = ''; }
+    });
   }
 
   function setupPRCInteraction() {
     const canvas = document.getElementById('prc-canvas');
     let dragging = false;
 
-    function setFromMouse(e) {
+    function isNearOperatingPoint(mx, my) {
+      const meta = canvas._chartMeta;
+      if (!meta) return false;
+      const m = getMetrics(state.idx, state.prevalence, getActivePoints());
+      const dx = mx - plotX(m.tpr, meta.w), dy = my - plotY(m.prec, meta.h);
+      return Math.sqrt(dx * dx + dy * dy) <= 10;
+    }
+
+    function setThreshFromMouse(e) {
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const meta = canvas._chartMeta;
       if (!meta) return;
       const targetRecall = invPlotX(mx, meta.w);
+      const pts = getActivePoints();
       let bestDist = Infinity, bestIdx = 0;
       for (let i = 0; i < N; i++) {
-        const d = Math.abs(curveData[i].tpr - targetRecall);
+        const d = Math.abs(pts[i].tpr - targetRecall);
         if (d < bestDist) { bestDist = d; bestIdx = i; }
       }
       state.idx = bestIdx;
@@ -1049,17 +1509,59 @@
       updateAll();
     }
 
-    canvas.addEventListener('mousedown', function(e) { dragging = true; setFromMouse(e); });
-    canvas.addEventListener('mousemove', function(e) { if (dragging) setFromMouse(e); });
-    window.addEventListener('mouseup', function() { dragging = false; });
+    canvas.addEventListener('mousedown', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      if (state.showMultiple) {
+        if (isNearOperatingPoint(mx, my)) {
+          dragging = true;
+          canvas.style.cursor = 'grabbing';
+        } else {
+          state.selectedAlt = findNearestAltOnPRC(mx, my);
+          updateAll();
+        }
+      } else {
+        dragging = true;
+        setThreshFromMouse(e);
+      }
+    });
 
+    canvas.addEventListener('mousemove', function(e) {
+      if (dragging) {
+        setThreshFromMouse(e);
+        return;
+      }
+      if (!state.showMultiple) { canvas.style.cursor = ''; return; }
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      if (isNearOperatingPoint(mx, my)) {
+        canvas.style.cursor = 'grab';
+        onHover(-1);
+      } else {
+        canvas.style.cursor = 'crosshair';
+        onHover(findNearestAltOnPRC(mx, my));
+      }
+    });
+
+    canvas.addEventListener('mouseleave', function() { canvas.style.cursor = ''; onHover(-1); });
+    window.addEventListener('mouseup', function() {
+      if (dragging) { dragging = false; canvas.style.cursor = ''; }
+    });
   }
 
   function setupDistInteraction() {
     const canvas = document.getElementById('dist-canvas');
     let dragging = false;
 
-    function setFromMouse(e) {
+    function isNearThresholdLine(mx) {
+      const meta = canvas._distMeta;
+      if (!meta) return false;
+      const threshold = curveData[state.idx].t;
+      return Math.abs(mx - meta.toX(threshold)) <= 8;
+    }
+
+    function setThreshFromMouse(e) {
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const meta = canvas._distMeta;
@@ -1075,10 +1577,44 @@
       updateAll();
     }
 
-    canvas.addEventListener('mousedown', function(e) { dragging = true; setFromMouse(e); });
-    canvas.addEventListener('mousemove', function(e) { if (dragging) setFromMouse(e); });
-    window.addEventListener('mouseup', function() { dragging = false; });
+    canvas.addEventListener('mousedown', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      if (state.showMultiple) {
+        if (isNearThresholdLine(mx)) {
+          dragging = true;
+          canvas.style.cursor = 'ew-resize';
+        } else {
+          state.selectedAlt = findNearestAltOnDist(mx);
+          updateAll();
+        }
+      } else {
+        dragging = true;
+        setThreshFromMouse(e);
+      }
+    });
 
+    canvas.addEventListener('mousemove', function(e) {
+      if (dragging) {
+        setThreshFromMouse(e);
+        return;
+      }
+      if (!state.showMultiple) { canvas.style.cursor = ''; return; }
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      if (isNearThresholdLine(mx)) {
+        canvas.style.cursor = 'ew-resize';
+        onHover(-1);
+      } else {
+        canvas.style.cursor = 'crosshair';
+        onHover(findNearestAltOnDist(mx));
+      }
+    });
+
+    canvas.addEventListener('mouseleave', function() { canvas.style.cursor = ''; onHover(-1); });
+    window.addEventListener('mouseup', function() {
+      if (dragging) { dragging = false; canvas.style.cursor = ''; }
+    });
   }
 
   // ── Resize handling ────────────────────────────────────

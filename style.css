@@ -109,6 +109,7 @@ a:hover {
 
 .paper-item {
   position: relative;
+  width: fit-content;
 }
 
 .paper-preview {
@@ -118,6 +119,7 @@ a:hover {
   bottom: 100%;
   z-index: 10;
   padding-bottom: 0.5rem;
+  pointer-events: none;
 }
 
 .paper-item:hover .paper-preview {
