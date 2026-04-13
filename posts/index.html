@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Posts — Michael Nercessian</title>
+  <meta name="description" content="Posts by Michael Nercessian.">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+  <style>
+    h1 { margin-bottom: 1.5rem; }
+    nav a { text-decoration: none; }
+    .posts-list {
+      list-style: none;
+      border-top: 1px solid var(--rule);
+    }
+    .posts-list li {
+      display: flex;
+      gap: 1.25rem;
+      align-items: flex-start;
+      padding: 1.25rem 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .post-thumb {
+      width: 160px;
+      min-width: 160px;
+      border-radius: 4px;
+      object-fit: cover;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+    .post-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .post-title {
+      font-size: 1.1rem;
+    }
+    .post-description {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      margin-top: 0.15rem;
+    }
+    @media (max-width: 480px) {
+      .posts-list li { flex-direction: column; gap: 0.75rem; }
+      .post-thumb { width: 100%; min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav><a href="../index.html">← Home</a></nav>
+
+    <h1>Posts</h1>
+
+    <section>
+      <ul class="posts-list">
+        <li>
+          <img class="post-thumb" src="auc-thumb.png" alt="AUC interactive explorer screenshot">
+          <div class="post-info">
+            <a class="post-title" href="/auc/">What does "90 AUC" really mean?</a>
+            <p class="post-description">An interactive exploration of AUC, prevalence, and the metrics that actually matter at deployment.</p>
+          </div>
+        </li>
+        <li>
+          <img class="post-thumb" src="../bridge-preview.png" alt="BRIDGE trial schematic">
+          <div class="post-info">
+            <a class="post-title" href="https://bridge-trials.org/" target="_blank" rel="noopener noreferrer">BRIDGE trial sample size calculator</a>
+            <p class="post-description">Calculate sample size for AI clinical trials with BRIDGE-enabled data reuse.</p>
+          </div>
+        </li>
+        <li>
+          <img class="post-thumb" src="pillar0-thumb.png" alt="Pillar-0 results across modalities">
+          <div class="post-info">
+            <a class="post-title" href="https://yalalab.github.io/pillar-0/" target="_blank" rel="noopener noreferrer">Pillar-0: a new frontier for radiology foundation models</a>
+            <p class="post-description">A radiology foundation model pretrained on 155K volumes, with a scalable evaluation framework for 366 clinical findings.</p>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+  </main>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>What Does "90 AUC" Really Mean?</title>
+  <title>What does "90 AUC" really mean?</title>
   <meta name="description" content="An interactive exploration of AUC, prevalence, precision, recall, and F1.">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -212,7 +212,7 @@
     }
     .metrics-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 0.75rem 1.25rem;
       margin-bottom: 0;
       padding-bottom: 1rem;
@@ -259,36 +259,35 @@
     .at-metric-row .metric .metric-value {
       font-size: 1.3rem;
     }
-    .f1-range {
-      display: flex;
-      align-items: baseline;
-      justify-content: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-      font-size: 1.05rem;
-      color: var(--text-secondary);
-      padding-top: 0.75rem;
-      border-top: 1px solid var(--rule);
-      margin-bottom: 0.75rem;
-    }
-    .f1-range .f1-text { white-space: nowrap; }
-    .f1-range span { color: var(--text); font-weight: 600; font-size: 1.15rem; }
-    .f1-range .go-btn {
+    .go-link-wrap {
+      position: relative;
       display: inline-block;
-      margin-left: 0.4rem;
-      padding: 0.1rem 0.5rem;
-      font-family: inherit;
-      font-size: 0.75rem;
-      letter-spacing: 0.02em;
-      color: var(--text-secondary);
-      background: transparent;
-      border: 1px solid var(--rule);
-      border-radius: 3px;
-      cursor: pointer;
       vertical-align: middle;
-      transition: all 0.15s ease;
     }
-    .f1-range .go-btn:hover { color: var(--text); border-color: var(--text-secondary); }
+    .go-link {
+      cursor: pointer;
+      color: var(--text-secondary);
+      display: block;
+      transition: color 0.15s ease;
+    }
+    .go-link:hover { color: var(--text); }
+    .go-link-wrap .go-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 0.8rem;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #fff;
+      background: var(--text);
+      padding: 0.2rem 0.45rem;
+      border-radius: 3px;
+    }
+    .go-link-wrap:hover .go-tooltip { display: block; }
 
     /* Confusion matrix / natural language */
     .summary-box {
@@ -365,9 +364,28 @@
       margin: 0 0.35rem;
     }
 
+    .dist-legend-inline {
+      display: none;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-left: auto;
+    }
+    .legend-swatch {
+      display: inline-block;
+      width: 12px;
+      height: 3px;
+      border-radius: 1px;
+    }
+    .legend-swatch.pos { background: #c0533a; }
+    .legend-swatch.neg { background: #4a7c91; }
+
     @media (max-width: 700px) {
       html { font-size: 16px; }
       main { padding: 2.5rem 1.25rem 4rem; }
+      .chart-header { flex-wrap: wrap; gap: 0.4rem; }
+      .dist-legend-inline { display: flex; }
       .chart-row { grid-template-columns: 1fr; }
       .controls { grid-template-columns: 1fr; gap: 1rem; }
       .metrics-grid { grid-template-columns: repeat(2, 1fr); }
@@ -380,7 +398,7 @@
     <nav><a href="../index.html">← Home</a></nav>
 
     <article>
-      <h1>What Does &ldquo;90 AUC&rdquo; Really Mean?</h1>
+      <h1>What does &ldquo;90 AUC&rdquo; really mean?</h1>
       <p class="subtitle">An interactive exploration of AUC, prevalence, and the metrics that actually matter at deployment.</p>
 
       <p>
@@ -396,8 +414,12 @@
             <div class="chart-header">
               <h3>Score Distributions</h3>
               <div class="toggle-group" id="dist-toggle">
-                <button class="toggle-btn active" data-value="canonical">Canonical example</button>
-                <button class="toggle-btn" data-value="sample">Sample many examples</button>
+                <button class="toggle-btn active" data-value="canonical">Canonical</button>
+                <button class="toggle-btn" data-value="sample">Many</button>
+              </div>
+              <div class="dist-legend-inline">
+                <span class="legend-swatch pos"></span> Positive
+                <span class="legend-swatch neg"></span> Negative
               </div>
             </div>
             <canvas id="dist-canvas" data-height="200"></canvas>
@@ -445,6 +467,10 @@
               <div class="metric-label">F1 Score</div>
               <div class="metric-value highlight" id="m-f1">—</div>
             </div>
+            <div class="metric">
+              <div class="metric-label">Best F1 <span class="go-link-wrap"><svg class="go-link" id="go-best-f1" width="10" height="8" viewBox="0 0 10 8"><path d="M1 7L9 1M9 1H4M9 1V5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span class="go-tooltip">Go to threshold</span></span></div>
+              <div class="metric-value" id="m-best-f1">—</div>
+            </div>
           </div>
           <div class="at-metrics">
             <div class="at-metric-row">
@@ -466,7 +492,6 @@
               </div>
             </div>
           </div>
-          <div class="f1-range" id="f1-range"></div>
           <div class="summary-box">
             <div class="summary-title">Per 1,000 Screened</div>
             <div class="cm-grid">
@@ -883,18 +908,21 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Legend
-    ctx.font = '12px "EB Garamond", Georgia, serif';
-    ctx.textAlign = 'left';
-    const lx = w - dPad.right - 135, ly = dPad.top + 14;
-    ctx.fillStyle = '#c0533a';
-    ctx.fillRect(lx, ly - 6, 14, 3);
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillText('Positive class', lx + 20, ly);
-    ctx.fillStyle = '#4a7c91';
-    ctx.fillRect(lx, ly + 12, 14, 3);
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillText('Negative class', lx + 20, ly + 18);
+    // Legend (skip on small screens where inline HTML legend is shown)
+    if (window.innerWidth > 700) {
+      ctx.font = '12px "EB Garamond", Georgia, serif';
+      ctx.textAlign = 'left';
+      const legendW = 20 + Math.max(ctx.measureText('Positive class').width, ctx.measureText('Negative class').width);
+      const lx = w - dPad.right - legendW - 6, ly = dPad.top + 14;
+      ctx.fillStyle = '#c0533a';
+      ctx.fillRect(lx, ly - 6, 14, 3);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillText('Positive class', lx + 20, ly);
+      ctx.fillStyle = '#4a7c91';
+      ctx.fillRect(lx, ly + 12, 14, 3);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillText('Negative class', lx + 20, ly + 18);
+    }
 
     // Region labels
     ctx.font = '11px "EB Garamond", Georgia, serif';
@@ -996,7 +1024,7 @@
 
     // AUC label
     ctx.fillStyle = '#5a5a5a';
-    ctx.font = '13px "EB Garamond", Georgia, serif';
+    ctx.font = 'bold 13px "EB Garamond", Georgia, serif';
     ctx.textAlign = 'left';
     ctx.fillText('AUC = ' + state.auc.toFixed(2), plotX(0.5, w), plotY(0.15, h));
 
@@ -1234,17 +1262,7 @@
     document.getElementById('m-par').textContent = par > 0 ? par.toFixed(3) : 'N/A';
 
     const best = findBestF1(state.prevalence, active);
-    const bestM = getMetrics(best.idx, state.prevalence, active);
-    const f1El = document.getElementById('f1-range');
-    f1El.innerHTML =
-      '<span class="f1-text">Best achievable F1: <span>' + best.f1.toFixed(3) + '</span> ' +
-      '(at recall = ' + bestM.tpr.toFixed(2) + ', precision = ' + bestM.prec.toFixed(2) + ')</span>' +
-      '<button class="go-btn" id="go-best-f1">Go to threshold</button>';
-    document.getElementById('go-best-f1').addEventListener('click', function() {
-      state.idx = best.idx;
-      document.getElementById('thresh-slider').value = best.idx;
-      updateAll();
-    });
+    document.getElementById('m-best-f1').textContent = best.f1.toFixed(3);
 
     // Confusion matrix per 1000
     const nPop = 1000;
@@ -1625,6 +1643,14 @@
   });
 
   // ── Initialize ─────────────────────────────────────────
+  document.getElementById('go-best-f1').addEventListener('click', function() {
+    const active = getActivePoints();
+    const best = findBestF1(state.prevalence, active);
+    state.idx = best.idx;
+    document.getElementById('thresh-slider').value = best.idx;
+    updateAll();
+  });
+
   generateCurve();
   updateAll();
   setupROCInteraction();
