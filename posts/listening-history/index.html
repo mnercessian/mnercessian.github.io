@@ -86,6 +86,17 @@ function skipTrack(direction){
   playTrack(queueSeason,next,false);
   return true;
 }
+function resumeCurrentTrack(){
+  if(!spotifyController||!spotifyReady)return;
+  if(trackStarted&&previousPlayback&&!previousPlayback.isPaused)return;
+  try{spotifyController.resume()}catch{playbackFallback()}
+}
+function toggleCurrentTrack(){
+  if(!spotifyController||!spotifyReady)return false;
+  if(trackStarted&&previousPlayback&&!previousPlayback.isPaused)spotifyController.pause();
+  else resumeCurrentTrack();
+  return true;
+}
 function updateTrackControls(){
   $('track-prev').disabled=adjacentTrack(-1)<0;
   $('track-next').disabled=adjacentTrack(1)<0;
@@ -94,7 +105,7 @@ function updateTrackControls(){
   for(const [action,handler] of [
     ['previoustrack',adjacentTrack(-1)<0?null:()=>skipTrack(-1)],
     ['nexttrack',adjacentTrack(1)<0?null:()=>skipTrack(1)],
-    ['play',()=>spotifyController?.resume()],
+    ['play',resumeCurrentTrack],
     ['pause',()=>spotifyController?.pause()]
   ]){try{navigator.mediaSession.setActionHandler(action,handler)}catch{}}
 }
@@ -103,6 +114,7 @@ $('track-next').onclick=()=>skipTrack(1);
 document.addEventListener('keydown',event=>{
   if(event.repeat||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
   if(event.target.closest?.('input,textarea,select,[contenteditable="true"]'))return;
+  if(event.key==='F8'||event.key==='MediaPlayPause'){if(toggleCurrentTrack())event.preventDefault();return;}
   const direction={F7:-1,F9:1,MediaTrackPrevious:-1,MediaTrackNext:1}[event.key];
   if(direction&&skipTrack(direction))event.preventDefault();
 });
@@ -144,9 +156,7 @@ function playTrack(seasonIndex,trackIndex,manual=true){
   if(manual&&selected===t.uri){
     queueSeason=seasonIndex;queueIndex=trackIndex;updateTrackControls();
     if(spotifyController&&spotifyReady&&loadedURI===selected){
-      if(!trackStarted||!previousPlayback||previousPlayback.isPaused){
-        try{spotifyController.resume()}catch{playbackFallback()}
-      }
+      resumeCurrentTrack();
     }
     return;
   }
