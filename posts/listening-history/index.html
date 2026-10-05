@@ -94,7 +94,7 @@ function updateTrackControls(){
   for(const [action,handler] of [
     ['previoustrack',adjacentTrack(-1)<0?null:()=>skipTrack(-1)],
     ['nexttrack',adjacentTrack(1)<0?null:()=>skipTrack(1)],
-    ['play',()=>spotifyController?.play()],
+    ['play',()=>spotifyController?.resume()],
     ['pause',()=>spotifyController?.pause()]
   ]){try{navigator.mediaSession.setActionHandler(action,handler)}catch{}}
 }
@@ -141,6 +141,15 @@ window.onSpotifyIframeApiReady=api=>{spotifyAPI=api;if(selected)requestPlayback(
 function playTrack(seasonIndex,trackIndex,manual=true){
   const t=S[seasonIndex].top[trackIndex];
   if(!/^spotify:track:[a-zA-Z0-9]+$/.test(t.uri||''))return;
+  if(manual&&selected===t.uri){
+    queueSeason=seasonIndex;queueIndex=trackIndex;updateTrackControls();
+    if(spotifyController&&spotifyReady&&loadedURI===selected){
+      if(!trackStarted||!previousPlayback||previousPlayback.isPaused){
+        try{spotifyController.resume()}catch{playbackFallback()}
+      }
+    }
+    return;
+  }
   queueSeason=seasonIndex;queueIndex=trackIndex;previousPlayback=null;trackStarted=false;
   selected=t.uri;updateTrackControls();const id=t.uri.split(':')[2];
   $('chosen').textContent=t.title+' · '+t.artist;
