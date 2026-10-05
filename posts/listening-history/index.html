@@ -75,6 +75,30 @@ $('timeline').addEventListener('click',e=>{const b=e.target.closest('button');if
 $('year-select').onchange=e=>{applyFilter('all');render(S.findIndex(s=>s.year===+e.target.value))};$('prev').onclick=()=>{const v=visible();render(v[v.indexOf(current)-1])};$('next').onclick=()=>{const v=visible();render(v[v.indexOf(current)+1])};
 function render(i){if(!Number.isInteger(i)||i<0||i>=S.length)return;current=i;const s=S[i];document.documentElement.style.setProperty('--accent',colors[s.name][0]);document.documentElement.style.setProperty('--secondary',colors[s.name][1]);$('stages').innerHTML=stages.filter(g=>belongs(s,g)).map(g=>`<span class="stage" style="--ribbon:${g.color}">${g.name}</span>`).join('');$('season').textContent=s.name+'.';$('year').textContent=s.name==='Winter'?s.year+' / '+(s.year+1):s.year; $('issue').textContent=String(i+1).padStart(2,'0')+'/41';$('period').textContent={Fall:'September — November',Winter:'December — February',Spring:'March — May',Summer:'June — August'}[s.name];$('moods').innerHTML=s.moods.map(m=>`<span class="mood">${esc(m)}</span>`).join('');$('stats').innerHTML=[[fmt(s.plays),'plays'],[fmt(Math.round(s.ms/3600000)),'hours'],[fmt(s.unique),'different songs']].map(([n,l])=>`<div><strong>${n}</strong><span>${l}</span></div>`).join('');$('tracks').innerHTML=s.top.map((t,j)=>`<li class="track ${selected===t.uri?'active':''}"><span class="rank">${String(j+1).padStart(2,'0')}</span><button class="song" data-track="${j}" aria-label="Listen to ${esc(t.title)} by ${esc(t.artist)}"><strong>${esc(t.title)}</strong><span>${esc(t.artist)}</span></button><span class="count">${t.plays}×</span><button class="listen" data-track="${j}" aria-label="Play ${esc(t.title)} in Spotify">▶</button></li>`).join('');$('tracks').scrollTop=0;const date=x=>new Date(x).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'America/Los_Angeles'});$('coverage').textContent=`${i===0||i===S.length-1?'PARTIAL SEASON · ':''}${date(s.first)} – ${date(s.last)}`;$('prev').disabled=i===visible()[0];$('next').disabled=i===visible().at(-1);$('year-select').value=s.year;document.querySelectorAll('.tab').forEach((b,j)=>b.setAttribute('aria-current',String(i===j)));$('timeline').scrollTo({left:i*148-($('timeline').clientWidth-148)/2,behavior:'instant'});history.replaceState(null,'','#'+s.id)}
 let spotifyAPI=null,spotifyController=null,spotifyReady=false,spotifyCreating=false,loadedURI=null,playbackTimer=null;
+let queueSeason=null,queueIndex=-1,previousPlayback=null,trackStarted=false;
+function handlePlaybackUpdate(event){
+  const state=event.data;
+  if(!state||state.playingURI!==selected)return;
+  const position=Number(state.position),duration=Number(state.duration);
+  if(!Number.isFinite(position)||!Number.isFinite(duration)||duration<=0)return;
+  const previous=previousPlayback;
+  if(!state.isPaused&&!state.isBuffering&&position>0){
+    trackStarted=true;clearTimeout(playbackTimer);
+    $('player-note').textContent='Playing on Spotify.';
+  }
+  // Spotify may report completion at the duration or reset its cursor to zero.
+  const reachedEnd=position>=duration;
+  const resetAtEnd=state.isPaused&&position===0&&previous&&!previous.isPaused&&previous.position>=previous.duration-1000;
+  previousPlayback={position,duration,isPaused:state.isPaused};
+  if(!trackStarted||state.isBuffering||(!reachedEnd&&!resetAtEnd))return;
+  trackStarted=false;previousPlayback=null;
+  if(queueSeason===null)return;
+  const tracks=S[queueSeason].top;
+  let next=queueIndex+1;
+  while(next<tracks.length&&!/^spotify:track:[a-zA-Z0-9]+$/.test(tracks[next].uri||''))next++;
+  if(next<tracks.length)playTrack(queueSeason,next,false);
+  else{clearTimeout(playbackTimer);$('player-note').textContent='Season complete.';}
+}
 function playbackFallback(){ $('player-note').textContent='Press Play below if playback hasn’t started.'; }
 function requestPlayback(){
   clearTimeout(playbackTimer);
@@ -94,11 +118,7 @@ function requestPlayback(){
     spotifyAPI.createController($('spotify-mount'),{uri:loadedURI,width:'100%',height:152},controller=>{
       spotifyController=controller;spotifyCreating=false;
       controller.addListener('ready',()=>{spotifyReady=true;startSelectedTrack()});
-      controller.addListener('playback_update',event=>{
-        const state=event.data;
-        if(state.playingURI&&state.playingURI!==selected)return;
-        if(!state.isPaused&&!state.isBuffering&&state.position>0){clearTimeout(playbackTimer);$('player-note').textContent='Playing on Spotify.';}
-      });
+      controller.addListener('playback_update',handlePlaybackUpdate);
     });
     return;
   }
@@ -111,6 +131,18 @@ function startSelectedTrack(){
   }catch(error){clearTimeout(playbackTimer);playbackFallback();}
 }
 window.onSpotifyIframeApiReady=api=>{spotifyAPI=api;if(selected)requestPlayback()};
-$('tracks').addEventListener('click',e=>{const b=e.target.closest('[data-track]');if(!b)return;const t=S[current].top[+b.dataset.track];if(!/^spotify:track:[a-zA-Z0-9]+$/.test(t.uri||'')){$('chosen').textContent=t.title;$('player-note').textContent='Spotify link unavailable.';$('embed').innerHTML='';$('links').innerHTML='';return;}selected=t.uri;const id=t.uri.split(':')[2];$('chosen').textContent=t.title+' · '+t.artist;$('links').innerHTML=`<a href="${esc(t.uri)}">Open in Spotify app</a><a href="https://open.spotify.com/track/${id}" target="_blank" rel="noopener">Open Spotify web player</a>`;requestPlayback();document.querySelectorAll('.track').forEach((r,j)=>r.classList.toggle('active',S[current].top[j].uri===selected));$('chosen').setAttribute('tabindex','-1');$('chosen').focus({preventScroll:true});document.querySelector('.player').scrollIntoView({behavior:'smooth',block:'nearest'})});
+function playTrack(seasonIndex,trackIndex,manual=true){
+  const t=S[seasonIndex].top[trackIndex];
+  if(!/^spotify:track:[a-zA-Z0-9]+$/.test(t.uri||''))return;
+  queueSeason=seasonIndex;queueIndex=trackIndex;previousPlayback=null;trackStarted=false;
+  selected=t.uri;const id=t.uri.split(':')[2];
+  $('chosen').textContent=t.title+' · '+t.artist;
+  $('links').innerHTML=`<a href="${esc(t.uri)}">Open in Spotify app</a><a href="https://open.spotify.com/track/${id}" target="_blank" rel="noopener">Open Spotify web player</a>`;
+  requestPlayback();
+  document.querySelectorAll('.track').forEach((r,j)=>r.classList.toggle('active',S[current].top[j].uri===selected));
+  if(manual){$('chosen').setAttribute('tabindex','-1');$('chosen').focus({preventScroll:true});document.querySelector('.player').scrollIntoView({behavior:'smooth',block:'nearest'});}
+}
+$('tracks').addEventListener('click',e=>{const b=e.target.closest('[data-track]');if(b)playTrack(current,+b.dataset.track)});
+
 const initial=S.findIndex(s=>s.id===location.hash.slice(1));render(initial<0?S.length-1:initial);
 </script></body></html>
